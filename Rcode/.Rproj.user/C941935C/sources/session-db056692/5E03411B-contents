@@ -1,0 +1,494 @@
+---
+title: "Untitled"
+output: pdf_document
+date: "2025-03-19"
+---
+
+```{r, message = FALSE, warning = FALSE}
+# library used
+
+if(!require(timetk)){install.packages("timetk")}
+if(!require(tidyverse)){install.packages("tidyverse")}
+if(!require(lubridate)){install.packages("lubridate")}
+if(!require(quantmod)){install.packages("quantmod")}
+if(!require(PerformanceAnalytics)){install.packages("PerformanceAnalytics")}
+if(!require(tidyquant)){install.packages("tidyquant")}
+if(!require(tibbletime)){install.packages("tibbletime")}
+if(!require(broom)){install.packages("broom")}
+if(!require(highcharter)){install.packages("highcharter")}
+if(!require(readxl)){install.packages("readxl")}
+if(!require(writexl)){install.packages("writexl")}
+if(!require(cowplot)){install.packages("cowplot")}
+if(!require(forecast)){install.packages("forecast")}
+if(!require(ggplot2)){install.packages("ggplot2")}
+if(!require(e1071)){install.packages("e1071")}
+if(!require(xgboost)){install.packages("xgboost")}
+if(!require(glmnet)){install.packages("glmnet")}
+if(!require(caret)){install.packages("caret")}
+if(!require(rpart)){install.packages("rpart")}
+if(!require(randomForest)){install.packages("randomForest")}
+if(!require(adabag)){install.packages("adabag")}
+if(!require(rpart)){install.packages("rpart.plot")}
+
+library(timetk)
+library(tidyverse)
+library(lubridate)
+library(quantmod)
+library(PerformanceAnalytics)
+library(tidyquant)
+library(tibbletime)
+library(broom)
+library(highcharter)
+library(readxl)
+library(writexl)
+library(cowplot)
+library(forecast)
+library(ggplot2)
+library(e1071)
+library(xgboost)
+library(glmnet)
+library(caret)
+library(rpart)
+library(randomForest)
+library(adabag)
+library(rpart.plot) 
+```
+
+```{r, message = FALSE, warning = FALSE}
+load("data_ml.RData")                   # Load the data
+data_ml <- data_ml %>% 
+    filter(date > "1999-12-31",         # Keep the date with sufficient data points
+           date < "2019-01-01") %>%
+    arrange(stock_id, date)             # Order the data
+```
+
+```{r, message = FALSE, warning = FALSE}
+features <- colnames(data_ml[3:95]) # Keep the feature's column names (hard-coded, beware!)
+features_short <- c("Div_Yld", "Eps", "Mkt_Cap_12M_Usd", "Mom_11M_Usd", 
+                    "Ocf", "Pb", "Vol1Y_Usd")
+```
+
+\newpage
+<!-- ======================================================================= -->
+\text{========================================================================}\
+Q1\
+i and ii\
+```{r, message = FALSE, warning = FALSE}
+getSymbols.FRED("BAMLC0A0CM", # Extract data
+                env = ".GlobalEnv",
+                return.class = "xts")
+
+cred_spread <- fortify(BAMLC0A0CM) # Transform to dataframe
+colnames(cred_spread) <- c("date", "spread") # Change column name
+cred_spread <- cred_spread %>% # Take extraction and...
+  full_join(data_ml %>% dplyr::select(date), by = "date") %>% # Merge!
+  mutate(spread = na.locf(spread)) # Replace NA by previous
+cred_spread <- cred_spread[!duplicated(cred_spread),] # Remove duplicates
+```
+
+```{r, message = FALSE, warning = FALSE}
+data_cond <- data_ml %>% # Create new dataset
+  dplyr::select(c("stock_id", "date", features_short))
+
+names_cred_spread <- paste0(features_short, "_cred_spread") # New column names
+feat_cred_spread <- data_cond %>% # Old values
+  dplyr::select(features_short)
+
+cred_spread <- data_ml %>% # Create vector of spreads
+  dplyr::select(date) %>%
+  left_join(cred_spread, by = "date")
+
+feat_cred_spread <- feat_cred_spread * # This product creates...
+  matrix(cred_spread$spread, # the new values...
+         length(cred_spread$spread), # using duplicated...
+         length(features_short))
+
+colnames(feat_cred_spread) <- names_cred_spread
+data_cond <- bind_cols(data_cond, feat_cred_spread) # Aggregate old and new data
+
+ggplot(data_cond, aes(x = Eps_cred_spread)) +
+  geom_histogram(bins = 30, fill = "grey", color = "black") +
+  ggtitle("Histogram of Eps_cred_spread") +
+  xlab("Eps_cred_spread") +
+  ylab("Frequency")
+
+ggplot(data_cond, aes(x = Div_Yld_cred_spread)) +
+  geom_histogram(bins = 30, fill = "grey", color = "black") +
+  ggtitle("Histogram of Div_Yld_cred_spread") +
+  xlab("Div_Yld_cred_spread") +
+  ylab("Frequency")
+
+ggplot(data_cond, aes(x = Mkt_Cap_12M_Usd_cred_spread)) +
+  geom_histogram(bins = 30, fill = "grey", color = "black") +
+  ggtitle("Histogram of Mkt_Cap_12M_Usd_cred_spread") +
+  xlab("Mkt_Cap_12M_Usd_cred_spread") +
+  ylab("Frequency")
+
+ggplot(data_cond, aes(x = Mom_11M_Usd_cred_spread)) +
+  geom_histogram(bins = 30, fill = "grey", color = "black") +
+  ggtitle("Histogram of Mom_11M_Usd_cred_spread") +
+  xlab("Mom_11M_Usd_cred_spread") +
+  ylab("Frequency")
+
+ggplot(data_cond, aes(x = Ocf_cred_spread)) +
+  geom_histogram(bins = 30, fill = "grey", color = "black") +
+  ggtitle("Histogram of Ocf_cred_spread") +
+  xlab("Ocf_cred_spread") +
+  ylab("Frequency")
+
+ggplot(data_cond, aes(x = Pb_cred_spread)) +
+  geom_histogram(bins = 30, fill = "grey", color = "black") +
+  ggtitle("Histogram of Pb_cred_spread") +
+  xlab("Pb_cred_spread") +
+  ylab("Frequency")
+
+ggplot(data_cond, aes(x = Vol1Y_Usd_cred_spread)) +
+  geom_histogram(bins = 30, fill = "grey", color = "black") +
+  ggtitle("Histogram of Vol1Y_Usd_cred_spread") +
+  xlab("Vol1Y_Usd_cred_spread") +
+  ylab("Frequency")
+```
+
+By multiplying each predictor by the spread, we created augmented features. Notice that for each of the predictors, the new variable is heavily skewed and the shape does not look like to be following uniform distribution. Which may indicate that further steps of uniformization may required.\
+
+<!-- ======================================================================= -->
+\text{========================================================================}\
+iii\
+```{r}
+norm_unif <-  function(v){  # This is a function that uniformalises a vector.
+    v <- v %>% as.matrix()
+    return(ecdf(v)(v))
+}
+
+norm_0_1 <-  function(v){  # This is a function that uniformalises a vector.
+    return((v-min(v))/(max(v)-min(v)))
+}
+
+x <- data_cond$Div_Yld_cred_spread
+Length <- length(x)
+
+data_norm <- data.frame(                        # Formatting the data
+    index = 1:Length,                           # Index of point/instance
+    standard = (x - mean(x)) / sd(x),           # Standardisation
+    norm_0_1 = norm_0_1(x),                     # [0,1] reduction
+    unif = norm_unif(x)) %>%                    # Uniformisation
+    gather(key = Type, value = value, -index)   # Putting in tidy format
+ggplot(data_norm, aes(x = index, y = value, fill = Type)) +   # Plot!
+    geom_bar(stat = "identity") +
+    facet_grid(Type~.) + # This option creates 3 concatenated graphs to ease comparison
+    ggtitle("Comparison of Transformations for Div_Yld_cred_spread")     
+  
+```
+
+```{r}
+x <- data_cond$Eps_cred_spread
+Length <- length(x)
+
+data_norm <- data.frame(                        # Formatting the data
+    index = 1:Length,                           # Index of point/instance
+    standard = (x - mean(x)) / sd(x),           # Standardisation
+    norm_0_1 = norm_0_1(x),                     # [0,1] reduction
+    unif = norm_unif(x)) %>%                    # Uniformisation
+    gather(key = Type, value = value, -index)   # Putting in tidy format
+ggplot(data_norm, aes(x = index, y = value, fill = Type)) +   # Plot!
+    geom_bar(stat = "identity") +
+    facet_grid(Type~.) + # This option creates 3 concatenated graphs to ease comparison
+    ggtitle("Comparison of Transformations for Eps_cred_spread")    
+```
+
+```{r}
+x <- data_cond$Mkt_Cap_12M_Usd_cred_spread
+Length <- length(x)
+
+data_norm <- data.frame(                        # Formatting the data
+    index = 1:Length,                           # Index of point/instance
+    standard = (x - mean(x)) / sd(x),           # Standardisation
+    norm_0_1 = norm_0_1(x),                     # [0,1] reduction
+    unif = norm_unif(x)) %>%                    # Uniformisation
+    gather(key = Type, value = value, -index)   # Putting in tidy format
+ggplot(data_norm, aes(x = index, y = value, fill = Type)) +   # Plot!
+    geom_bar(stat = "identity") +
+    facet_grid(Type~.) + # This option creates 3 concatenated graphs to ease comparison
+    ggtitle("Comparison of Transformations for Mkt_Cap_12M_Usd_cred_spread")    
+```
+
+```{r}
+x <- data_cond$Mom_11M_Usd_cred_spread
+Length <- length(x)
+
+data_norm <- data.frame(                        # Formatting the data
+    index = 1:Length,                           # Index of point/instance
+    standard = (x - mean(x)) / sd(x),           # Standardisation
+    norm_0_1 = norm_0_1(x),                     # [0,1] reduction
+    unif = norm_unif(x)) %>%                    # Uniformisation
+    gather(key = Type, value = value, -index)   # Putting in tidy format
+ggplot(data_norm, aes(x = index, y = value, fill = Type)) +   # Plot!
+    geom_bar(stat = "identity") +
+    facet_grid(Type~.) + # This option creates 3 concatenated graphs to ease comparison
+    ggtitle("Comparison of Transformations for Mom_11M_Usd_cred_spread")    
+```
+
+```{r}
+x <- data_cond$Ocf_cred_spread
+Length <- length(x)
+
+data_norm <- data.frame(                        # Formatting the data
+    index = 1:Length,                           # Index of point/instance
+    standard = (x - mean(x)) / sd(x),           # Standardisation
+    norm_0_1 = norm_0_1(x),                     # [0,1] reduction
+    unif = norm_unif(x)) %>%                    # Uniformisation
+    gather(key = Type, value = value, -index)   # Putting in tidy format
+ggplot(data_norm, aes(x = index, y = value, fill = Type)) +   # Plot!
+    geom_bar(stat = "identity") +
+    facet_grid(Type~.) + # This option creates 3 concatenated graphs to ease comparison
+    ggtitle("Comparison of Transformations for Ocf_cred_spread")   
+```
+
+```{r}
+x <- data_cond$Pb_cred_spread
+Length <- length(x)
+
+data_norm <- data.frame(                        # Formatting the data
+    index = 1:Length,                           # Index of point/instance
+    standard = (x - mean(x)) / sd(x),           # Standardisation
+    norm_0_1 = norm_0_1(x),                     # [0,1] reduction
+    unif = norm_unif(x)) %>%                    # Uniformisation
+    gather(key = Type, value = value, -index)   # Putting in tidy format
+ggplot(data_norm, aes(x = index, y = value, fill = Type)) +   # Plot!
+    geom_bar(stat = "identity") +
+    facet_grid(Type~.) + # This option creates 3 concatenated graphs to ease comparison
+    ggtitle("Comparison of Transformations for Pb_cred_spread")   
+```
+
+```{r}
+x <- data_cond$Vol1Y_Usd_cred_spread
+Length <- length(x)
+
+data_norm <- data.frame(                        # Formatting the data
+    index = 1:Length,                           # Index of point/instance
+    standard = (x - mean(x)) / sd(x),           # Standardisation
+    norm_0_1 = norm_0_1(x),                     # [0,1] reduction
+    unif = norm_unif(x)) %>%                    # Uniformisation
+    gather(key = Type, value = value, -index)   # Putting in tidy format
+ggplot(data_norm, aes(x = index, y = value, fill = Type)) +   # Plot!
+    geom_bar(stat = "identity") +
+    facet_grid(Type~.) + # This option creates 3 concatenated graphs to ease comparison
+    ggtitle("Comparison of Transformations for Vol1Y_Usd_cred_spread")   
+```
+
+From the above graphs for each predictors, we see that through the uniformization process, out data are set between 0 and 1 which we can verify that the new data is following the uniform distribution.
+
+\newpage
+<!-- ======================================================================= -->
+\text{========================================================================}\
+Q2\
+```{r}
+getSymbols.FRED("VIXCLS", # Extract data
+                env = ".GlobalEnv",
+                return.class = "xts")
+vix <- fortify(VIXCLS)
+
+colnames(vix) <- c("date", "vix")
+
+vix <- vix %>%
+  full_join(data_ml %>% dplyr::select(date), by = "date") %>%
+  mutate(vix = na.locf(vix))
+vix <- vix[!duplicated(vix),]
+
+vix <- data_ml %>%
+  dplyr::select(date) %>%
+  left_join(vix, by = "date")
+
+delta <- 0.5 #as in the hint
+
+vix_bar <- median(vix$vix)
+data_vix <- data_ml %>%
+  dplyr::select(stock_id, date, R1M_Usd) %>%
+  mutate(r_minus = (-0.02) * exp(-delta*(vix$vix-vix_bar)),
+         r_plus = 0.02 * exp(delta*(vix$vix-vix_bar)))
+data_vix <- data_vix %>%
+  mutate(R1M_Usd_Cvix = if_else(R1M_Usd < r_minus, -1, if_else(R1M_Usd > r_plus, 1,0)),
+         R1M_Usd_Cvix = as.factor(R1M_Usd_Cvix))
+
+table(data_vix$R1M_Usd_Cvix)
+
+# 2) (Optional) Summarize the dynamic thresholds you created
+summary(data_vix$r_minus)
+summary(data_vix$r_plus)
+
+ggplot(data_vix, aes(x = date, fill = R1M_Usd_Cvix)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(
+    values = c("-1" = "red", "0" = "grey", "1" = "green"),
+    name = "Label"
+  ) +
+  ggtitle("Distribution of R1M_Usd_Cvix Over Time") +
+  xlab("Date") +
+  ylab("Proportion") +
+  theme_minimal()
+```
+
+Notice that the green part take most place in the chart, indicating a predominance of buy signals. Whereas the grey and red which indicates hold and sell signals are less frequent.\
+
+\newpage
+<!-- ======================================================================= -->
+\text{========================================================================}\
+Q3\
+```{r}
+ggplot(data_ml, aes(x = R12M_Usd)) + 
+  geom_histogram() +
+  ggtitle("Histogram of R12M_Usd") +
+  xlab("R12M_Usd") +
+  ylab("Frequency")
+
+data_ml %>% 
+  filter(R12M_Usd > 50) %>% 
+  dplyr::select(stock_id, date, R12M_Usd)
+
+data_ml %>% 
+  filter(stock_id == 683, year(date) == 2009) %>% 
+  dplyr::select(date, R1M_Usd)
+```
+Notice that the histogram shows that most R12M_Usd values are clustered at lower levels, with a few noticeable right tail (extreme values) indicating the presence of outliers. The table further prove that such outliers does exists with values greater than 50. 
+
+
+
+\newpage
+<!-- ======================================================================= -->
+\text{========================================================================}\
+Q4\
+a\
+```{r}
+data_ml <- data_ml %>% 
+    filter(date > "1999-12-31",         # Keep the date with sufficient data points
+           date < "2019-01-01") %>%
+    arrange(stock_id, date)             # Order the data
+
+stock_ids <- levels(as.factor(data_ml$stock_id)) # A list of all stock_ids
+stock_days <- data_ml %>%                        # Compute the number of data points per stock
+    group_by(stock_id) %>% summarize(nb = n()) 
+stock_ids_short <- stock_ids[which(stock_days$nb == max(stock_days$nb))] # Stocks with full data
+returns <- data_ml %>%                           # Compute returns, in matrix format, in 3 steps:
+    filter(stock_id %in% stock_ids_short) %>%    # 1. Filtering the data
+    dplyr::select(date, stock_id, R1M_Usd) %>%   # 2. Keep returns along with dates & firm names
+    spread(key = stock_id, value = R1M_Usd)      # 3. Put in matrix shape 
+features <- colnames(data_ml[3:95]) # Keep the feature's column names (hard-coded, beware!)
+features_short <- c("Div_Yld", "Eps", "Mkt_Cap_12M_Usd", "Mom_11M_Usd", 
+                    "Ocf", "Pb", "Vol1Y_Usd")
+data_ml <- data_ml %>% 
+    group_by(date) %>%                                   # Group by date
+    mutate(R1M_Usd_C = R1M_Usd > median(R1M_Usd),        # Create the categorical labels
+           R12M_Usd_C = R1M_Usd > median(R12M_Usd)) %>%
+    ungroup() %>%
+    mutate_if(is.logical, as.factor)
+separation_date <- as.Date("2014-01-15")
+training_sample <- filter(data_ml, date < separation_date)
+testing_sample <- filter(data_ml, date >= separation_date)
+
+
+formula <- paste("R1M_Usd ~", paste(features, collapse = " + ")) # Defines the model 
+formula <- as.formula(formula)                                   # Forcing formula object
+
+# First Tree
+fit_tree1 = rpart(formula, data = training_sample, cp = 0.001)
+fit_tree2 = rpart(formula, data = training_sample, cp = 0.01)
+
+rpart.plot(fit_tree1, main = "Tree with cp = 0.001")
+rpart.plot(fit_tree2, main = "Tree with cp = 0.01")
+
+predict_tree1 = predict(fit_tree1, newdata = testing_sample)
+predict_tree2 = predict(fit_tree2, newdata = testing_sample)
+
+mse_tree1 <- mean((testing_sample$R1M_Usd - predict_tree1)^2)
+mse_tree2 <- mean((testing_sample$R1M_Usd - predict_tree2)^2)
+
+hit_tree1 <- mean((predict_tree1 * testing_sample$R1M_Usd) > 0, na.rm = TRUE)
+hit_tree2 <- mean((predict_tree2 * testing_sample$R1M_Usd) > 0, na.rm = TRUE)
+
+results_df <- data.frame(
+  Tree      = c("cp = 0.001", "cp = 0.01"),
+  MSE       = c(mse_tree1, mse_tree2),
+  Hit_Ratio = c(hit_tree1, hit_tree2)
+)
+results_df
+```
+Notice that for both trees ther Hit Ratio is the same but the mse varies. Which means the tree with cp = 0.01 generalizes better on the test set, as it avoids unnecessary complexity
+
+
+<!-- ======================================================================= -->
+\text{========================================================================}\
+b\
+```{r}
+# Smaller set of predictors
+formula_small <- paste("R1M_Usd ~", paste(features_short, collapse = " + "))
+formula_small <- as.formula(formula_small)
+
+set.seed(20933475)
+
+# 30000 instances and forests of 5 different trees
+train_sub <- training_sample[sample(nrow(training_sample), 30000), ]
+ntree_values <- c(10, 20, 40, 80, 160)
+
+results_rf <- data.frame(
+  ntree    = ntree_values,
+  MSE      = NA,
+  HitRatio = NA
+)
+
+for (i in seq_along(ntree_values)) {
+  rf_model <- randomForest(
+    formula_small,
+    data     = train_sub,
+    ntree    = ntree_values[i],  # Vary the number of trees
+    mtry     = 5,                # 5 predictors randomly chosen at each split
+    replace  = FALSE,            
+    nodesize = 250                 
+  )
+  
+  # 6. Evaluate performance on the training subset (per the question)
+  pred_rf <- predict(rf_model, newdata = train_sub)
+  
+  # Compute MSE
+  mse_rf <- mean((train_sub$R1M_Usd - pred_rf)^2, na.rm = TRUE)
+  
+  # Compute hit ratio (proportion of correct sign)
+  hr_rf <- mean((pred_rf * train_sub$R1M_Usd) > 0, na.rm = TRUE)
+  
+  # Store the results
+  results_rf$MSE[i]      <- mse_rf
+  results_rf$HitRatio[i] <- hr_rf
+}
+
+results_rf
+```
+Notice as the number of trees increases, the mse overall decreases as all mse with ntree greater than 10 has smaller MSE than that of ntree=10. The hit ratio increases only by a little, which may indicate that additional complexity at this particular cases may not be worthwhile. 
+
+
+\text{========================================================================}\
+c\
+```{r}
+# Extract data for calendar year 2008 and 2009
+data_2008 <- data_ml %>% filter(year(date) == 2008)
+data_2009 <- data_ml %>% filter(year(date) == 2009)
+
+# Build a tree for 2008 data (using the parameters from RCC5)
+tree_2008 <- rpart(formula,
+                   data = data_2008,
+                   minbucket = 3500,
+                   minsplit = 8000,
+                   cp = 0.0001,
+                   maxdepth = 3)
+
+# Build a tree for 2009 data
+tree_2009 <- rpart(formula,
+                   data = data_2009,
+                   minbucket = 3500,
+                   minsplit = 8000,
+                   cp = 0.0001,
+                   maxdepth = 3)
+
+rpart.plot(tree_2008, main = "Tree for Calendar Year 2008")
+rpart.plot(tree_2009, main = "Tree for Calendar Year 2009")
+```
+
+In 2008, the tree structure 

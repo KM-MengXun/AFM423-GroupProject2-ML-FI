@@ -3,25 +3,25 @@
     "path": "F:/Waterloo/AFM/AFM 423/Project/AFM423-GroupProject2-ML-FI/Rcode/Project Code.Rmd",
     "project_path": "Project Code.Rmd",
     "type": "r_markdown",
-    "hash": "1992984888",
+    "hash": "0",
     "contents": "",
-    "dirty": false,
+    "dirty": true,
     "created": 1744174925570.0,
-    "source_on_save": false,
+    "source_on_save": true,
     "relative_order": 1,
     "properties": {
         "tempName": "Untitled1",
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "6,0",
-        "scrollLine": "0"
+        "cursorPosition": "60,28",
+        "scrollLine": "42"
     },
     "folds": "",
-    "lastKnownWriteTime": 1744174942,
+    "lastKnownWriteTime": 1744486628,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1744174942808,
+    "last_content_update": 1744588537271,
     "read_only": false,
     "read_only_alternatives": []
 }

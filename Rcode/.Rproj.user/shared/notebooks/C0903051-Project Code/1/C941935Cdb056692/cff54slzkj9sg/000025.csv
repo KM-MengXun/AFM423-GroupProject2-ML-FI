@@ -1,0 +1,5 @@
+"0","data_ml <- data_ml %>%"
+"0","  distinct() %>% #remove duplicates"
+"0","  filter(date > ""1999-12-31"",         # Keep the date with sufficient data points"
+"0","         date < ""2019-01-01"") %>%"
+"0","    arrange(stock_id, date)             # Order the data"

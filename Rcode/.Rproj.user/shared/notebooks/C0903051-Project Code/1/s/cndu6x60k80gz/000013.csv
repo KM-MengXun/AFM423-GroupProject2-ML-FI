@@ -1,0 +1,4 @@
+"0","training_set <- filter(data_ml, date < as.Date(""2014-01-15""))"
+"0","validation_set <- filter(data_ml, (date >= as.Date(""2014-01-15"") "
+"0","                                   & date < as.Date(""2017-01-15"")))"
+"0","testing_set <- filter(data_ml, date >= as.Date(""2017-01-15""))"

@@ -1,0 +1,306 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-01-28"
+---
+
+```{r}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+```{r, message=FALSE}
+# library used
+
+if(!require(timetk)){install.packages("timetk")}
+if(!require(tidyverse)){install.packages("tidyverse")}
+if(!require(lubridate)){install.packages("lubridate")}
+if(!require(quantmod)){install.packages("quantmod")}
+if(!require(PerformanceAnalytics)){install.packages("PerformanceAnalytics")}
+if(!require(tidyquant)){install.packages("tidyquant")}
+if(!require(tibbletime)){install.packages("tibbletime")}
+if(!require(broom)){install.packages("broom")}
+if(!require(highcharter)){install.packages("highcharter")}
+
+library(timetk)
+library(tidyverse)
+library(lubridate)
+library(quantmod)
+library(PerformanceAnalytics)
+library(tidyquant)
+library(tibbletime)
+library(broom)
+library(highcharter)
+
+```
+
+
+```{r, message=FALSE}
+temp <- tempfile()
+base <- "http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+factor <- "Global_3_Factors"
+format<- "_CSV.zip"
+full_url <- paste(base, factor, format, sep = "")
+download.file(full_url, temp, quiet = TRUE)
+Global_3_Factors <-
+read_csv(unz(temp, "Global_3_Factors.csv"))
+head(Global_3_Factors, 3)
+
+
+```
+Note that since there are metadate included, so we see there are some unrelated rows such as notes about missing data and. And the format of the column names is not organized
+
+```{r}
+Global_3_Factors <- read_csv(unz(temp,"Global_3_Factors.csv"), skip = 6)
+head(Global_3_Factors, 3)
+```
+Note that after we skip 6 rows that contain metadata, we obtain a better organized table; however, the first column which includes the date is still not proper formatted. 
+```{r}
+map(Global_3_Factors, class)
+```
+Note that the data for each column has type or class defined as character, meaning that 0.77 is actually stored as an character instead of a character
+```{r}
+Global_3_Factors <- read_csv(unz(temp, "Global_3_Factors.csv"), skip = 6, 
+                             col_types = cols(`Mkt-RF` = col_double(),
+                                              SMB = col_double(),
+                                              HML = col_double(),
+                                              RF = col_double()))
+head(Global_3_Factors, 3)
+```
+Note that right now, we have the columns except for date data type defined as double which converts the characters into number type yet the column name is still off. 
+```{r}
+Global_3_Factors <- read_csv(unz(temp, "Global_3_Factors.csv"), skip = 6) %>% 
+  rename(date = "...1") %>% 
+  mutate_at(vars(-date), as.numeric)
+head(Global_3_Factors, 3)
+```
+Note after this step the name of the date column' name is properly adjusted now.
+```{r}
+Global_3_Factors <- read_csv(unz(temp, "Global_3_Factors.csv"), skip = 6) %>% 
+  rename(date = "...1") %>% 
+  mutate_at(vars(-date), as.numeric) %>% 
+  mutate(date = ymd(parse_date_time(date, "%Y%m")))
+head(Global_3_Factors, 3)
+```
+Note after this step the elements in the date columns is properly formatted into Year followed by month then by day\
+
+b)
+```{r}
+Global_3_Factors %>% 
+  select(date) %>% 
+  mutate(date = lubridate::rollback(date)) %>%
+head(1)
+```
+Notice that the date is changed from 1990-07-01 to 1990-06-30 which the date is roll back to the last day of previous month. This is useful if we align the FF data with portfolio data which uses date as end of the month
+```{r}
+Global_3_Factors %>% 
+  select(date) %>% 
+  mutate(date = lubridate::rollback(date + months(1))) %>%
+head(1)
+```
+Notice that the date is changed from 1990-07-01 to 1990-07-31 which the date is roll to the last day of current month
+```{r}
+Global_3_Factors <- read_csv(unz(temp, "Global_3_Factors.csv"), skip = 6) %>% 
+  rename(date = "...1") %>% 
+  mutate_at(vars(-date), as.numeric) %>%
+  mutate(date = ymd(parse_date_time(date, "%Y%m"))) %>% 
+  mutate(date = rollback(date + months(1))) 
+head(Global_3_Factors, 3)
+```
+Now all the whole table has been properly formatted. We can also do some roundings to the orginal date, for example, 199007 as character, and concatenate with 01 or the last day of the month (30, 28/29, 31) using if statments and then converted it into proper date format
+
+c)
+```{r}
+symbols <- c("SPY","EFA", "IJS", "EEM","AGG")
+
+prices <- read_csv("Data.csv", 
+            col_types = cols(date = col_date(format = "%m/%d/%Y"))) %>%
+  tk_xts(date_var = date)
+
+head(prices, 3)
+
+```
+```{r}
+prices_monthly <- to.monthly(prices, indexAt = "lastof", OHLC = FALSE)
+head(prices_monthly, 3)
+```
+```{r}
+asset_returns_xts <- Return.calculate(prices_monthly, method = "log") %>% 
+  na.omit()
+head(asset_returns_xts, 3)
+```
+```{r}
+asset_returns_dplyr_byhand <- prices %>% 
+  to.monthly(indexAt = "lastof", OHLC = FALSE) %>%
+# convert the index to a date 
+  data.frame(date = index(.)) %>%
+# now remove the index because it got converted to row names
+  remove_rownames() %>%
+  gather(asset, prices, -date) %>%
+  group_by(asset) %>%
+  mutate(returns = (log(prices) - log(lag(prices)))) %>%
+  select(-prices) %>%
+  spread(asset, returns) %>%
+  select(date, symbols)
+head(asset_returns_dplyr_byhand, 3)
+```
+
+```{r}
+asset_returns_tq_builtin <- prices %>%
+  tk_tbl(preserve_index = TRUE, rename_index = "date") %>%
+  gather(asset, prices, -date) %>%
+  group_by(asset) %>%
+  tq_transmute(mutate_fun = periodReturn, period = "monthly", type = "log") %>%
+  spread(asset, monthly.returns) %>%
+  select(date, symbols) %>%
+  slice(-1)
+head(asset_returns_tq_builtin, 3)
+```
+
+```{r}
+asset_returns_tbltime <- prices %>% 
+  tk_tbl(preserve_index = TRUE, rename_index = "date") %>% 
+# this is the the tibbletime function 
+  as_tbl_time(index = date) %>% 
+  as_period(period = "month", side = "end") %>%
+  pivot_longer(cols = -date, names_to = "asset", values_to = "returns") %>%
+  # gather(asset, returns, -date) %>% 
+  group_by(asset) %>%
+  tq_transmute(mutate_fun = periodReturn, type = "log") %>% 
+  spread(asset, monthly.returns) %>% 
+  select(date, symbols) %>% 
+  slice(-1)
+
+```
+
+```{r}
+head(asset_returns_xts, 3)
+head(asset_returns_dplyr_byhand, 3)
+head(asset_returns_tq_builtin, 3)
+head(asset_returns_tbltime, 3)
+```
+```{r}
+asset_returns_long <-
+asset_returns_dplyr_byhand %>%
+gather(asset, returns, -date) %>%
+group_by(asset)
+head(asset_returns_long, 3)
+tail(asset_returns_long, 3)
+```
+```{r}
+W <- c(0.25, 0.25, 0.2, 0.2, 0.1)
+portfolio_returns_tq_rebalanced_monthly <- asset_returns_long %>%
+  tq_portfolio(assets_col = asset, returns_col = returns, weights = W, 
+               col_rename = "returns", rebalance_on = "months")
+```
+```{r}
+ff_portfolio_returns <- portfolio_returns_tq_rebalanced_monthly %>% 
+  left_join(Global_3_Factors, by = "date") %>% 
+  mutate(MKT_RF = `Mkt-RF`/100, SMB = SMB/100, HML = HML/100, RF = RF/100, 
+         R_excess = round(returns - RF, 4)) %>% 
+  select(-returns, -RF)
+head(ff_portfolio_returns, 3)
+```
+The left_join() function merges the rebalanced portfolio return data with the Global_3_Factors data based on the "date" column.
+After merging, it contains the portfolio returns, the Fama-French factors, and a new column R_excess, which represents the portfolio's excess returns over the risk-free rate
+
+d)
+```{r}
+model = lm(R_excess ~ MKT_RF + SMB + HML, data = ff_portfolio_returns %>% drop_na())
+ff_dplyr_byhand <- tidy(model, conf.int = T, conf.level = .95) %>% 
+  rename(beta = estimate) 
+ff_dplyr_byhand %>% 
+  mutate_if(is.numeric, funs(round(., 3))) %>% 
+  select(-statistic, -std.error)
+```
+The output from the model shows the estimated coefficients. We see that MKT_RF has the lowest p.value close to 0, so we can say that it explains the majority part of the market, whereas the SMB and HML factor is not statistically significant.The result is not surprising since we know FF-3F model is used to explain stock returns. 
+
+\newpage
+Q2
+```{r}
+ff_dplyr_byhand %>% 
+  mutate_if(is.numeric, funs(round(., 3))) %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = term, y = beta, shape = term, color = term)) + 
+  geom_point() + geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) + 
+  labs(title = "FF 3-Factor Coefficients",subtitle = "balanced portfolio", 
+       x = "", y = "coefficient", caption = "data source: Fama-French website") + 
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5), 
+        plot.caption = element_text(hjust = 0))
+```
+The plot shows a 95% CI for each factor in our FF model, again we see that the coefficient is relatively high compared to SMB and HML factor where they are about 0. This further confirms the result we conclude from the p.values. 
+\newpage
+Q3
+```{r}
+# Choose a 24-month rolling window
+window <- 24
+# define a rolling ff model with tibbletime
+rolling_lm <- rollify(.f = function(R_excess, MKT_RF, SMB, HML) { 
+  lm(R_excess ~ MKT_RF + SMB + HML) 
+  }, window = window, unlist = FALSE)
+
+rolling_ff_betas <- ff_portfolio_returns %>% 
+  mutate(rolling_ff = rolling_lm(R_excess, MKT_RF, SMB, HML)) %>% 
+  slice(-1:-23) %>% 
+  select(date, rolling_ff)
+head(rolling_ff_betas, 3)
+```
+Note that the the tibble created includes two column, the first one is the date column and second column as list of linear model objects
+```{r}
+rolling_ff_betas <- ff_portfolio_returns %>% 
+  mutate(rolling_ff = rolling_lm(R_excess, MKT_RF, SMB, HML)) %>% 
+  mutate(tidied = map(rolling_ff, tidy, conf.int = T)) %>% 
+  unnest(tidied) %>% 
+  slice(-1:-23) %>% 
+  select(date, term, estimate, conf.low, conf.high) %>% 
+  filter(term != "(Intercept)") %>% 
+  rename(beta = estimate, factor = term) %>% 
+  group_by(factor)
+head(rolling_ff_betas, 3)
+```
+The output again included the estiamted coefficinets for each 3 factors in our model. We can see still that SMB and HML factors are around 0 meaning it is less significant than MKT_RF
+```{r}
+rolling_ff_rsquared <- ff_portfolio_returns %>% 
+  mutate(rolling_ff = rolling_lm(R_excess, MKT_RF, SMB, HML)) %>% 
+  slice(-1:-23) %>% 
+  mutate(glanced = map(rolling_ff, glance)) %>% 
+  unnest(glanced) %>% 
+  select(date, r.squared, adj.r.squared, p.value)
+head(rolling_ff_rsquared, 3)
+```
+Note we have a relatively high R Square for each date, indicating that we are using a siutable model for excess return
+\newpage
+Q4
+```{r}
+rolling_ff_betas %>% ggplot(aes(x = date, y = beta, color = factor)) + 
+  geom_line() + labs(title= "24-Month Rolling FF Factor Betas") + 
+  theme_minimal() + theme(plot.title = element_text(hjust = 0.5), 
+                          axis.text.x = element_text(angle = 90))
+```
+The plot shows that Mkt-RF is the dominant factor, with stable and positive betas, while SMB and HML have minimal and inconsistent explanatory power.
+```{r}
+rolling_ff_rsquared_xts <- rolling_ff_rsquared %>% 
+  tk_xts(date_var = date, silent = TRUE)
+highchart(type = "stock") %>% hc_add_series(rolling_ff_rsquared_xts$r.squared, 
+                                            color = "cornflowerblue", 
+                                            name = "r-squared") %>% 
+  hc_title(text = "Rolling FF 3-Factor R-Squared") %>% 
+  hc_add_theme(hc_theme_flat()) %>% 
+  hc_navigator(enabled = FALSE) %>% 
+  hc_scrollbar(enabled = FALSE) %>% 
+  hc_exporting(enabled = TRUE)
+```
+The high R Squared indicate that the FF-3F model provides an excellent fit for explaining the portfolio's excess returns. 
+```{r}
+highchart(type = "stock") %>% hc_add_series(rolling_ff_rsquared_xts$r.squared, 
+                                            color = "cornflowerblue", 
+                                            name = "r-squared") %>% 
+  hc_title(text = "Rolling FF 3-Factor R-Squared") %>% 
+  hc_yAxis( max = 2, min = 0) %>% 
+  hc_add_theme(hc_theme_flat()) %>% 
+  hc_navigator(enabled = FALSE) %>%
+  hc_scrollbar(enabled = FALSE) %>% 
+  hc_exporting(enabled = TRUE)
+```
+After adjusting the y-axis range, the plot provides a clearer view of the model's stable and robust explanatory power over time.
