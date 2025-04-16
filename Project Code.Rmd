@@ -24,13 +24,14 @@ library(keras)
 Data Wrangling\
 Read the data in to the environment
 ```{r, message = FALSE, warning = FALSE}
-load("data_ml.RData")                   # Load the data
+# Use local drive address to load the data
+load("F:/Waterloo/AFM/AFM 423/data_ml.RData")                   # Load the data
 head(data_ml, 6)
 ```
 The first column is a unique identifier for each stock and the second column is the observation date. The other columns are financial or fundamental features for example, Advt_12M_Usd would represents average trading volume over the past 12 months (in USD).\
 
 Cleanning the data
-```{r}
+```{r, message = FALSE, warning = FALSE}
 data_ml <- data_ml %>%
   distinct() %>% #remove duplicates
   filter(date > "1999-12-31",         # Keep the date with sufficient data points
@@ -39,7 +40,7 @@ data_ml <- data_ml %>%
 ```
 
 Now we are going to create a new column "target_return" to store our predicted future stock returns
-```{r}
+```{r, message = FALSE, warning = FALSE}
 data_ml <- data_ml %>%
   mutate(target_return = R1M_Usd) %>%
   filter(!is.na(target_return))  # Remove rows without a future return
@@ -49,7 +50,7 @@ Then We define our train samples as the following:\
 Training set: from 2000-01-01 to 2013-12-31\
 Validation set: from 2014-01-01 to 2016-12-31\
 Testing Set: from 2017-01-01 to 2018-12-31\
-```{r}
+```{r, message = FALSE, warning = FALSE}
 training_set <- filter(data_ml, date < as.Date("2014-01-15"))
 validation_set <- filter(data_ml, (date >= as.Date("2014-01-15") 
                                    & date < as.Date("2017-01-15")))
@@ -58,7 +59,7 @@ testing_set <- filter(data_ml, date >= as.Date("2017-01-15"))
 
 <!-- Scaling required? -->
 Prepare data matrices
-```{r}
+```{r, message = FALSE, warning = FALSE}
 features <- training_set %>%
   select(-stock_id, -date, -R1M_Usd, -R3M_Usd, -R6M_Usd, -R12M_Usd, -target_return) %>%
   colnames()
@@ -75,7 +76,7 @@ y_test <- testing_set$target_return
 ```
 
 Train Lasso with cross-validation
-```{r}
+```{r, message = FALSE, warning = FALSE}
 # Use 10-fold cross-validation to find optimal lambda
 cv_lasso <- cv.glmnet(X_train, y_train, alpha = 1, nfolds = 10)
 
@@ -91,7 +92,7 @@ The graph shows a relationship between log(lambda) and its corresponding MSE. Th
 
 
 Evaluate model on validation
-```{r}
+```{r, message = FALSE, warning = FALSE}
 # Predict on validation and test sets
 pred_val <- predict(cv_lasso, s = best_lambda, newx = X_val)
 pred_test <- predict(cv_lasso, s = best_lambda, newx = X_test)
@@ -108,7 +109,7 @@ cat("Test RMSE:", rmse(y_test, pred_test), "\n")
 
 
 Extract Lasso Features (non-zero coefficients)
-```{r}
+```{r, message = FALSE, warning = FALSE}
 # Extract coefficients at best lambda
 lasso_coef <- coef(cv_lasso, s = best_lambda)
 selected_features <- rownames(lasso_coef)[which(lasso_coef[, 1] != 0)]
@@ -122,7 +123,7 @@ These are the features that out Lasso model thinks matter for predicting the fut
 
 
 Prepare the data needed for NN
-```{r}
+```{r, message = FALSE, warning = FALSE}
 # Prepare training, validation, and test sets using only selected LASSO features
 X_train_nn <- as.matrix(training_set[, selected_features])
 X_val_nn   <- as.matrix(validation_set[, selected_features])
@@ -135,14 +136,23 @@ y_test_nn  <- testing_set$target_return
 ```
 
 Build & Train Neural Network
-```{r}
+```{r, message = FALSE, warning = FALSE}
 # Build model
+# Starts a new model using a sequential stack of layers.
+# Layer 1.  32 neurons in the first hidden layer.
+#     Applies ReLU activation (max(0, x)), good for non-linearity.
+#     Number of input features (i.e., number of selected LASSO predictors).
+# Layer 2.  16 neurons, again with ReLU.
+# Layer 3.  1 output neuron: predicting a return.        
 model <- keras_model_sequential() %>%
   layer_dense(units = 32, activation = "relu", input_shape = ncol(X_train_nn)) %>%
   layer_dense(units = 16, activation = "relu") %>%
   layer_dense(units = 1)  # output layer
 
 # Compile model
+# Mean Squared Error is the objective to minimize (standard for regression).
+# Uses the Adam optimizer, which is adaptive and works well with most problems.
+# Also tracks MSE while training, for reporting
 model %>% compile(
   loss = "mse",
   optimizer = optimizer_adam(learning_rate = 0.001),
@@ -150,6 +160,9 @@ model %>% compile(
 )
 
 # Train model
+# Train the model for 100 full passes through the data.
+# Use mini-batches of 128 rows for updates (tradeoff between speed and stability).
+# Monitors performance on validation set at the end of each epoch.
 history <- model %>% fit(
   x = X_train_nn,
   y = y_train_nn,
@@ -162,7 +175,7 @@ history <- model %>% fit(
 ```
 
 Evaluate on Test Set
-```{r}
+```{r, message = FALSE, warning = FALSE}
 # Predict and calculate RMSE
 pred_nn <- model %>% predict(X_test_nn)
 
