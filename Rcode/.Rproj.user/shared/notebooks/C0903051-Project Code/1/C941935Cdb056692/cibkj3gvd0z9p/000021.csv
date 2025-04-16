@@ -1,2 +1,0 @@
-"0","load(""data_ml.RData"")                   # Load the data"
-"0","head(data_ml, 6)"
