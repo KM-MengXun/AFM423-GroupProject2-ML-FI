@@ -115,7 +115,6 @@ lasso_coef <- coef(cv_lasso, s = best_lambda)
 selected_features <- rownames(lasso_coef)[which(lasso_coef[, 1] != 0)]
 selected_features <- setdiff(selected_features, "(Intercept)")  # remove intercept
 print(selected_features)
-
 ```
 These are the features that out Lasso model thinks matter for predicting the futrue return
 
@@ -187,3 +186,12 @@ cat("Neural Network Test RMSE:", rmse(y_test_nn, pred_nn), "\n")
 
 ```
 
+```{r}
+plot(y_test_nn, pred_nn,
+     xlab = "Actual Return",
+     ylab = "Predicted Return",
+     main = "NN: Actual vs Predicted",
+     pch = 19, col = rgb(0,0,1,0.4))
+```
+
+We see most returns are clustering around 0 as expected in real stock data. For some points with actual return close to 0, the model predicts much higher values from 1% to 3%, this may suggests the model might be capturing noise in some input combinations. We also see that for stock with actual return greater than 5%, the predictions stay flay between 0 and 0.5% which may indicate that our model does not extrapolate well to large moves. 
