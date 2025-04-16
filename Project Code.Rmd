@@ -18,6 +18,9 @@ if (!require(glmnet)) install.packages("glmnet")
 library(glmnet)
 if (!require(keras)) install.packages("keras")
 library(keras)
+if (!require(elasticnet)) install.packages("elasticnet")
+library(elasticnet)
+
 ```
 
 \text{========================================================================}\
@@ -168,8 +171,9 @@ history <- model %>% fit(
   epochs = 100,
   batch_size = 128,
   validation_data = list(X_val_nn, y_val_nn),
-  verbose = 1
+  verbose = 0
 )
+plot(history)
 
 ```
 
@@ -195,3 +199,88 @@ plot(y_test_nn, pred_nn,
 ```
 
 We see most returns are clustering around 0 as expected in real stock data. For some points with actual return close to 0, the model predicts much higher values from 1% to 3%, this may suggests the model might be capturing noise in some input combinations. We also see that for stock with actual return greater than 5%, the predictions stay flay between 0 and 0.5% which may indicate that our model does not extrapolate well to large moves. 
+
+
+
+
+\text{========================================================================}\
+```{r}
+library(elasticnet)
+
+# Step 1: Get matrix of already-scaled training features
+X_spca <- as.matrix(training_set[, features])
+
+# Step 2: Run SPCA (sparse PCA) to get 5 components
+spca_result <- suppressMessages(spca(X_spca, 
+                    K = 5,                      # Number of components
+                    type = "predictor", 
+                    sparse = "penalty", 
+                    para = rep(0.4, 5),         # Sparsity level per component
+                    trace = FALSE))
+print(spca_result$loadings)
+```
+Start NN under SPCA model
+```{r}
+# Project components onto all sets (use same feature columns)
+X_val_spca <- as.matrix(validation_set[, features])
+X_test_spca <- as.matrix(testing_set[, features])
+
+Z_train <- X_spca %*% spca_result$loadings
+Z_val   <- X_val_spca %*% spca_result$loadings
+Z_test  <- X_test_spca %*% spca_result$loadings
+
+```
+
+```{r}
+# Build model using SPCA inputs (e.g., 5 components)
+model_spca <- keras_model_sequential() %>%
+  layer_dense(units = 32, activation = "relu", input_shape = ncol(Z_train)) %>%
+  layer_dense(units = 16, activation = "relu") %>%
+  layer_dense(units = 1)  # output layer for regression
+
+# Compile model
+model_spca %>% compile(
+  loss = "mse",
+  optimizer = optimizer_adam(learning_rate = 0.001),
+  metrics = list("mean_squared_error")
+)
+
+```
+
+
+```{r}
+history_spca <- model_spca %>% fit(
+  x = Z_train,
+  y = y_train_nn,
+  epochs = 100,
+  batch_size = 128,
+  validation_data = list(Z_val, y_val_nn),
+  verbose = 0  # quiet training
+)
+
+# Optional: plot loss curve
+plot(history_spca)
+
+```
+
+```{r}
+# Predict on test set
+pred_spca <- model_spca %>% predict(Z_test)
+
+# Calculate RMSE
+rmse <- function(actual, predicted) {
+  sqrt(mean((actual - predicted)^2))
+}
+
+cat("SPCA + NN Test RMSE:", rmse(y_test_nn, pred_spca), "\n")
+
+```
+
+```{r}
+plot(y_test_nn, pred_spca,
+     xlab = "Actual Return",
+     ylab = "Predicted Return",
+     main = "SPCA + NN: Actual vs Predicted",
+     pch = 19, col = rgb(0, 0, 1, 0.4))
+```
+
