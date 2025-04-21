@@ -4,7 +4,6 @@ output: html_document
 date: "2025-04-09"
 ---
 
-Install any packages that will be used for this project
 ```{r, message = FALSE, warning = FALSE}
 if(!require(readxl)){install.packages("readxl")}
 library(readxl)
@@ -26,15 +25,14 @@ if (!require(quantmod)) install.packages("quantmod")
 library(quantmod)
 if (!require(tidyquant)) install.packages("tidyquant")
 library(tidyquant)
-
+set.seed(123)
+tensorflow::tf$random$set_seed(123)
 ```
 
-\text{========================================================================}\
-Data Wrangling\
-Read the data in to the environment
+
 ```{r, message = FALSE, warning = FALSE}
 # Use local drive address to load the data
-load("/Users/irisgao/Desktop/AFM 423/Proj/GP2/data_ml.RData") 
+load("F:/Waterloo/AFM/AFM 423/data_ml.RData") 
 # preview first few rows of the dataset
 head(data_ml, 6)
 
@@ -55,10 +53,7 @@ sp500_monthly_returns <- sp500_data %>%
   ) %>%
   rename(sp500_return = monthly.returns)
 ```
-The first column is a unique identifier for each stock and the second column is the observation date. The other columns are financial or fundamental features for example, Advt_12M_Usd would represents average trading volume over the past 12 months (in USD).\
 
-
-Cleaning the data
 ```{r, message = FALSE, warning = FALSE}
 # Clean and sort the dataset
 target_leakage <- c("R3M_Usd", "R6M_Usd", "R12M_Usd") 
@@ -70,7 +65,7 @@ data_ml <- data_ml %>%
   arrange(stock_id, date)             # Order the data
 ```
 
-Now we are going to create a new column "target_return" to store our predicted future stock returns
+
 ```{r, message = FALSE, warning = FALSE}
 data_ml <- data_ml %>%
   mutate(target_return = R1M_Usd) %>%
@@ -98,11 +93,6 @@ data_ml <- data_ml %>% mutate(across(
 
 ```
 
-
-Then We define our train samples as the following:\
-Training set: from 2000-01-01 to 2013-12-31\
-Validation set: from 2014-01-01 to 2016-12-31\
-Testing Set: from 2017-01-01 to 2018-12-31\
 ```{r, message = FALSE, warning = FALSE}
 # Split into training, validation, and test sets
 training_set <- filter(data_ml, date < as.Date("2014-01-15"))
@@ -112,7 +102,6 @@ testing_set <- filter(data_ml, date >= as.Date("2017-01-15"))
 ```
 
 
-Prepare data matrices
 ```{r, message = FALSE, warning = FALSE}
 # Define features to be used for LASSO and NN
 features <- training_set %>%
@@ -130,7 +119,6 @@ X_test <- as.matrix(testing_set[, features])
 y_test <- testing_set$target_return
 ```
 
-Train Lasso with cross-validation
 ```{r, message = FALSE, warning = FALSE}
 # Train LASSO model with cross-validation
 cv_lasso <- cv.glmnet(X_train, y_train, alpha = 1, nfolds = 10)
@@ -144,10 +132,7 @@ best_lambda <- cv_lasso$lambda.min
 cat("Best lambda:", best_lambda, "\n")
 
 ```
-The graph shows a relationship between log(lambda) and its corresponding MSE. The lowest lambda we got is 5.685894e-05\
 
-
-Extract Lasso Features (non-zero coefficients)
 ```{r, message = FALSE, warning = FALSE}
 # Extract coefficients at best lambda
 lasso_coef <- coef(cv_lasso, s = best_lambda)
@@ -160,10 +145,7 @@ lasso_coef <- as.matrix(lasso_coef) %>%
   arrange(desc(abs(s1)))
 lasso_coef
 ```
-These are the features that out Lasso model thinks matter for predicting the future return.\
 
-
-Prepare the data needed for NN after LASSO
 ```{r, message = FALSE, warning = FALSE}
 # Prepare training, validation, and test sets using only selected LASSO features
 X_train_nn_lasso <- as.matrix(training_set[, selected_features])
@@ -176,11 +158,8 @@ y_test_nn_lasso  <- testing_set$target_return
 
 ```
 
-LASSO + NN hyperparameter Tuning
+
 ```{r, message = FALSE, warning = FALSE}
-
-library(keras)
-
 # Define a grid of hyperparameters
 units1_list <- c(16, 32, 64)
 units2_list <- c(8, 16, 32)
@@ -195,19 +174,32 @@ for (units1 in units1_list) {
       for (bs in batch_sizes) {
 
         # Build model
+        # Starts a new model using a sequential stack of layers.
+        # Layer 1.  x neurons in the first hidden layer.
+        #     Applies ReLU activation (max(0, x)), good for non-linearity.
+        #     Number of input features (i.e., number of selected LASSO predictors).
+        # Layer 2.  x neurons, again with ReLU.
+        # Layer 3.  1 output neuron: predicting a return.
         model <- keras_model_sequential() %>%
           layer_dense(units = units1, activation = "relu", input_shape = ncol(X_train_nn_lasso)) %>%
           layer_dense(units = units2, activation = "relu") %>%
           layer_dense(units = 1)
 
-        # Compile
+        # Compile model
+        # Mean Squared Error is the objective to minimize (standard for regression).
+        # Uses the Adam optimizer, which is adaptive and works well with most problems.
+        # Also tracks MSE while training, for reporting
+        # Learning Rate x
         model %>% compile(
           loss = "mse",
           optimizer = optimizer_adam(learning_rate = lr),
           metrics = list("mean_squared_error")
         )
 
-        # Train
+        # Train model
+        # Train the model for 100 full passes through the data.
+        # Use mini-batches of x rows for updates (tradeoff between speed and stability).
+        # Monitors performance on validation set at the end of each epoch.
         history <- model %>% fit(
           x = X_train_nn_lasso,
           y = y_train_nn_lasso,
@@ -239,42 +231,41 @@ print(best_result)
 
 ```
 
-Build & Train Neural Network
-```{r, message = FALSE, warning = FALSE}
-set.seed(123)
-tensorflow::tf$random$set_seed(123)
 
+```{r, message = FALSE, warning = FALSE}
 # Build model
 # Starts a new model using a sequential stack of layers.
-# Layer 1.  32 neurons in the first hidden layer.
+# Layer 1.  x neurons in the first hidden layer.
 #     Applies ReLU activation (max(0, x)), good for non-linearity.
 #     Number of input features (i.e., number of selected LASSO predictors).
-# Layer 2.  16 neurons, again with ReLU.
+# Layer 2.  x neurons, again with ReLU.
 # Layer 3.  1 output neuron: predicting a return.        
 model <- keras_model_sequential() %>%
-  layer_dense(units = 64, activation = "relu", input_shape = ncol(X_train_nn_lasso)) %>%
-  layer_dense(units = 8, activation = "relu") %>%
+  layer_dense(units = best_result$units1, activation = "relu", 
+              input_shape = ncol(X_train_nn_lasso)) %>%
+  layer_dense(units = best_result$units2, activation = "relu") %>%
   layer_dense(units = 1)  # output layer
 
 # Compile model
 # Mean Squared Error is the objective to minimize (standard for regression).
 # Uses the Adam optimizer, which is adaptive and works well with most problems.
 # Also tracks MSE while training, for reporting
+# Learning Rate x
 model %>% compile(
   loss = "mse",
-  optimizer = optimizer_adam(learning_rate = 0.0005),
+  optimizer = optimizer_adam(learning_rate = best_result$learning_rate),
   metrics = list("mean_squared_error")
 )
 
 # Train model
 # Train the model for 100 full passes through the data.
-# Use mini-batches of 128 rows for updates (tradeoff between speed and stability).
+# Use mini-batches of x rows for updates (tradeoff between speed and stability).
 # Monitors performance on validation set at the end of each epoch.
 history <- model %>% fit(
   x = X_train_nn_lasso,
   y = y_train_nn_lasso,
   epochs = 100,
-  batch_size = 128,
+  batch_size = best_result$batch_size,
   validation_data = list(X_val_nn_lasso, y_val_nn_lasso),
   verbose = 0
 )
@@ -283,7 +274,7 @@ plot(history)
 
 ```
 
-Evaluate on Test Set
+
 ```{r, message = FALSE, warning = FALSE}
 # Predict and calculate RMSE
 pred_nn_lasso_train <- model %>% predict(X_train_nn_lasso)
@@ -293,27 +284,20 @@ rmse <- function(actual, predicted) {
   sqrt(mean((actual - predicted)^2))
 }
 
-cat("Neural Network Train RMSE:", rmse(y_train_nn_lasso, pred_nn_lasso_train), "\n")
-cat("Neural Network Test RMSE:", rmse(y_test_nn_lasso, pred_nn_lasso_test), "\n")
+cat("LASSO + NN Train RMSE:", rmse(y_train_nn_lasso, pred_nn_lasso_train), "\n")
+cat("LASSO + NN Test RMSE:", rmse(y_test_nn_lasso, pred_nn_lasso_test), "\n")
 
 ```
 
 ```{r}
-plot(y_test_nn, pred_nn_lasso_test,
+plot(y_test_nn_lasso, pred_nn_lasso_test,
      xlab = "Actual Return",
      ylab = "Predicted Return",
      main = "NN: Actual vs Predicted",
      pch = 19, col = rgb(0,0,1,0.4))
 ```
 
-We see most returns are clustering around 0 as expected in real stock data. For some points with actual return close to 0, the model predicts much higher values from 1% to 3%, this may suggests the model might be capturing noise in some input combinations. We also see that for stock with actual return greater than 5%, the predictions stay flay between 0 and 0.5% which may indicate that our model does not extrapolate well to large moves. 
 
-
-
-\newpage
-\text{========================================================================}\
-
-tune SPCA hyperparameter K and para
 
 ```{r}
 # SPCA transformed matrices for training, validation and test
@@ -329,12 +313,8 @@ y_test_nn_spca <- testing_set$target_return
 
 
 ```{r}
-library(elasticnet)
 # Run SPCA for dimensionality reduction
-set.seed(123)
-tensorflow::tf$random$set_seed(123)
-
-spca_result <- suppressMessages(spca(X_spca_train, 
+spca_result <- suppressMessages(spca(X_train_spca, 
                     K = 5,                      # Number of components
                     type = "predictor", 
                     sparse = "penalty", 
@@ -349,19 +329,13 @@ cat('Percentage of close to zero loadings (< 0.05):', percentage, "\n")
 
 ```{r}
 # SPCA transformed matrices for training, validation and test
-Z_train_spca <- X_spca_train %*% spca_result$loadings
+Z_train_spca <- X_train_spca %*% spca_result$loadings
 Z_val_spca   <- X_val_spca %*% spca_result$loadings
 Z_test_spca  <- X_test_spca %*% spca_result$loadings
 
 ```
 
-SPCA + NN hyperparameter tuning
 ```{r, message = FALSE, warning = FALSE}
-
-library(keras)
-set.seed(123)
-tensorflow::tf$random$set_seed(123)
-
 # Define a grid of hyperparameters
 units1_list <- c(16, 32, 64)
 units2_list <- c(8, 16, 32)
@@ -421,20 +395,20 @@ print(best_result)
 ```
 
 
-Start NN under SPCA model
 
 ```{r}
 # Train NN on SPCA components
 model_spca <- keras_model_sequential() %>% 
-  layer_dense(units = 64, activation = "relu", input_shape = ncol(Z_train_spca)) %>% 
-  layer_dense(units = 8, activation = "relu") %>% 
+  layer_dense(units = best_result$units1, 
+              activation = "relu", input_shape = ncol(Z_train_spca)) %>% 
+  layer_dense(units = best_result$units2, activation = "relu") %>% 
   layer_dense(units = 1)  # output layer for regression
 
 
 # Compile model
 model_spca %>% compile(
   loss = "mse",
-  optimizer = optimizer_adam(learning_rate = 0.001),
+  optimizer = optimizer_adam(learning_rate = best_result$learning_rate),
   metrics = list("mean_squared_error")
 )
 
@@ -442,7 +416,7 @@ history_spca <- model_spca %>% fit(
   x = Z_train_spca,
   y = y_train_nn_spca,
   epochs = 100,
-  batch_size = 64,
+  batch_size = best_result$batch_size,
   validation_data = list(Z_val_spca, y_val_nn_spca),
   verbose = 0  # quiet training
 )
@@ -454,41 +428,39 @@ plot(history_spca)
 
 ```{r}
 # Predict on test set
-pred_spca_train <- model_spca %>% predict(Z_train)
-pred_spca_test <- model_spca %>% predict(Z_test)
+pred_spca_train <- model_spca %>% predict(Z_train_spca)
+pred_spca_test <- model_spca %>% predict(Z_test_spca)
 
 # Calculate RMSE
 rmse <- function(actual, predicted) {
   sqrt(mean((actual - predicted)^2))
 }
 
-cat("SPCA + NN Train RMSE:", rmse(y_train_nn, pred_spca_train), "\n")
-cat("SPCA + NN Test RMSE:", rmse(y_test_nn, pred_spca_test), "\n")
+cat("SPCA + NN Train RMSE:", rmse(y_train_nn_spca, pred_spca_train), "\n")
+cat("SPCA + NN Test RMSE:", rmse(y_test_nn_spca, pred_spca_test), "\n")
 
 ```
 
 ```{r}
-plot(y_test_nn, pred_spca_test,
+plot(y_test_nn_spca, pred_spca_test,
      xlab = "Actual Return",
      ylab = "Predicted Return",
      main = "SPCA + NN: Actual vs Predicted",
-   #xlim = c(-0.05, 0.05),   # Zoom on X-axis: Actual returns between -10% and +10%
-    # ylim = c(-0.1, 0.1),
+     #xlim = c(-0.05, 0.05),   # Zoom on X-axis: Actual returns between -10% and +10%
+     # ylim = c(-0.1, 0.1),
      pch = 19, col = rgb(0, 0, 1, 0.4))
 ```
 
 \newpage
-Portfolio Construction
 
-Do a top-20% only long-only portfolio instead of long-short
 ```{r}
 # Add predictions back to test set (already done if continuing)
 testing_set_lasso <- testing_set %>%
-  mutate(pred_return = as.numeric(pred_nn),
+  mutate(pred_return = as.numeric(pred_nn_lasso_test),
          model = "LASSO_NN")
 
 testing_set_spca <- testing_set %>%
-  mutate(pred_return = as.numeric(pred_spca),
+  mutate(pred_return = as.numeric(pred_spca_test),
          model = "SPCA_NN")
 
 # Combine both models
