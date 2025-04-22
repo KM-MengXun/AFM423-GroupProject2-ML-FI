@@ -1,6 +1,6 @@
 ---
-title: "Untitled"
-output: html_document
+title: "AFM 423 Final Project"
+output: pdf_document
 date: "2025-04-09"
 ---
 
